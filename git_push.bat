@@ -51,7 +51,7 @@ git remote add origin https://github.com/flyingb5000/options-trading.git || git 
 echo Remote repository set to: https://github.com/flyingb5000/options-trading.git
 
 REM Push to GitHub using master branch (default for new repositories)
-git push -u origin master
+git push -u origin main
 echo Code pushed to GitHub
 
 pause
