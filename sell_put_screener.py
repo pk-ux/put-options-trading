@@ -40,7 +40,7 @@ def load_config():
             "output": {
                 "sort_by": ["annualized_return"],
                 "sort_order": "descending",
-                "max_results": 10
+                "max_results": 50
             }
         }
         try:

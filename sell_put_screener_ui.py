@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 
 # 导入现有的options_screener模块中的函数
-from options_screener import (
+from sell_put_screener import (
     load_config, get_options_chain, calculate_metrics,
     screen_options, format_output
 )
