@@ -30,7 +30,7 @@ This application is a powerful put option selling screener that helps traders id
   - Delta
   - Annualized return percentage
   - Expiration date
-  - Calendar days and remaining business days
+  - DTE (Days to Expiration)
 
 - Color-coded results highlighting high-potential trades:
   - Green highlighting for options with ≥50% annualized returns
