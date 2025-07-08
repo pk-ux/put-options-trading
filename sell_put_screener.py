@@ -29,6 +29,7 @@ def load_config():
             },
             "options_strategy": {
                 "max_dte": 45,
+                "min_dte": 15,
                 "min_volume": 10,
                 "min_open_interest": 10
             },
@@ -70,8 +71,9 @@ def load_config():
 def get_options_chain(symbol, config):
     stock = yf.Ticker(symbol)
     max_dte = config['options_strategy']['max_dte']
+    min_dte = config['options_strategy'].get('min_dte', 0)
     expiry_dates = [date for date in stock.options 
-                   if (pd.to_datetime(date) - datetime.now()).days <= max_dte]
+                   if min_dte <= (pd.to_datetime(date) - datetime.now()).days <= max_dte]
     
     all_options = pd.DataFrame()
     for date in expiry_dates:
@@ -183,23 +185,28 @@ def screen_options(options_df, config):
     
     return filtered.head(config['output']['max_results'])
 
-def format_output(filtered_df):
+def format_output(filtered_df, current_price=None):
     display_columns = [
-        'symbol', 'strike', 'lastPrice', 'volume', 'open_interest',
+        'symbol', 'current_price', 'strike', 'lastPrice', 'volume', 'open_interest',
         'impliedVolatility', 'delta', 'annualized_return', 'expiry', 'calendar_days'
     ]
-    
-    formatted = filtered_df[display_columns].copy()
-    formatted['impliedVolatility'] = formatted['impliedVolatility'] * 100
-    formatted['annualized_return'] = formatted['annualized_return'].round(2)
-    formatted['impliedVolatility'] = formatted['impliedVolatility'].round(2)
-    formatted['delta'] = formatted['delta'].round(3)
-    
+    formatted = filtered_df.copy()
+    if current_price is not None:
+        formatted['current_price'] = current_price
+    # Only keep columns that exist in the DataFrame
+    display_columns = [col for col in display_columns if col in formatted.columns]
+    formatted = formatted[display_columns]
+    if 'impliedVolatility' in formatted.columns:
+        formatted['impliedVolatility'] = formatted['impliedVolatility'] * 100
+        formatted['impliedVolatility'] = formatted['impliedVolatility'].round(2)
+    if 'annualized_return' in formatted.columns:
+        formatted['annualized_return'] = formatted['annualized_return'].round(2)
+    if 'delta' in formatted.columns:
+        formatted['delta'] = formatted['delta'].round(3)
     print("\nFiltered DataFrame Info:")
-    print(filtered_df.info())
+    print(formatted.info())
     print("\nAvailable Columns:")
-    print(filtered_df.columns.tolist())
-    
+    print(formatted.columns.tolist())
     return formatted
 
 def main():
@@ -216,12 +223,12 @@ def main():
             if not options.empty:
                 options = calculate_metrics(options, current_price)
                 filtered = screen_options(options, config)
-                results = pd.concat([results, filtered])
+                formatted = format_output(filtered, current_price)
+                results = pd.concat([results, formatted])
         except Exception as e:
             print(f"Error processing {symbol}: {str(e)}")
     
     if not results.empty:
-        results = format_output(results)
         print("\nTop Options Opportunities:")
         print(results.to_string(index=False))
     else:

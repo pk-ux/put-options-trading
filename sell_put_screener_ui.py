@@ -64,7 +64,7 @@ class OptionsWorker(QThread):
             filtered = screen_options(options, self.config)
             
             # Format output
-            formatted = format_output(filtered)
+            formatted = format_output(filtered, current_price)
             if not formatted.empty:
                 self.finished.emit(formatted, f"{self.symbol} processing complete, found {len(formatted)} qualifying options", True)
             else:
@@ -96,13 +96,18 @@ class OptionsScreenerUI(QMainWindow):
     def screen_symbols(self, symbols):
         # Clear results dropdown
         self.results_combo.clear()
-        
+        # Clear previous results
+        self.results = {}
+        # Track the current batch of symbols
+        self._current_symbols = list(symbols)
         # Stop all running threads
         for worker in self.workers:
             worker.stop()
             worker.wait()
         self.workers.clear()
-        
+        # Track how many workers are expected
+        self._pending_workers = len(symbols)
+        self._screening_all = len(symbols) > 1
         # Process stocks one by one
         for symbol in symbols:
             worker = OptionsWorker(symbol, self.config)
@@ -186,6 +191,12 @@ class OptionsScreenerUI(QMainWindow):
         self.max_dte_spin.setRange(1, 365)
         self.max_dte_spin.setValue(self.config['options_strategy']['max_dte'])
         strategy_form.addRow("Max Days to Expiration:", self.max_dte_spin)
+        
+        # Minimum days to expiration
+        self.min_dte_spin = QSpinBox()
+        self.min_dte_spin.setRange(0, 364)
+        self.min_dte_spin.setValue(self.config['options_strategy'].get('min_dte', 0))
+        strategy_form.addRow("Min Days to Expiration:", self.min_dte_spin)
         
         # Minimum volume
         self.min_volume_spin = QSpinBox()
@@ -290,13 +301,12 @@ class OptionsScreenerUI(QMainWindow):
     def save_settings(self):
         # Update config
         self.config['options_strategy']['max_dte'] = self.max_dte_spin.value()
+        self.config['options_strategy']['min_dte'] = self.min_dte_spin.value()
         self.config['options_strategy']['min_volume'] = self.min_volume_spin.value()
         self.config['options_strategy']['min_open_interest'] = self.min_oi_spin.value()
-        
         self.config['screening_criteria']['min_annualized_return'] = self.min_return_spin.value()
         self.config['screening_criteria']['min_delta'] = self.min_delta_spin.value()
         self.config['screening_criteria']['max_delta'] = self.max_delta_spin.value()
-        
         # Save to config file
         self.save_config()
         self.status_bar.showMessage("Settings saved")
@@ -332,46 +342,49 @@ class OptionsScreenerUI(QMainWindow):
         self.status_bar.showMessage(message)
         
         if success:
-            # Extract stock symbol from message
             symbol = self.current_symbol
             if not df.empty:
                 symbol = df['symbol'].iloc[0]
                 self.results[symbol] = df
-                
-                # 更新结果下拉框
                 if symbol not in [self.results_combo.itemText(i) for i in range(self.results_combo.count())]:
                     self.results_combo.addItem(symbol)
-                    
-                # If it's the currently selected stock, display results immediately
-                if symbol == self.current_symbol or self.results_combo.count() == 1:
-                    self.results_combo.setCurrentText(symbol)
-                    self.display_results(symbol)
-            else:
-                # Only show message in status bar, don't pop up dialog
-                self.status_bar.showMessage(f"No qualifying options found for {symbol}")
-        else:
-            self.status_bar.showMessage(message)
-    
+        # Decrement pending workers
+        if hasattr(self, '_pending_workers'):
+            self._pending_workers -= 1
+        # Only build summary after all workers finish and if screening all
+        if hasattr(self, '_pending_workers') and self._pending_workers == 0 and getattr(self, '_screening_all', False):
+            summary_rows = []
+            for sym in self._current_symbols:
+                df = self.results.get(sym)
+                if df is not None and not df.empty:
+                    summary_rows.append(df.iloc[0])
+            if summary_rows:
+                summary_df = pd.DataFrame(summary_rows)
+                self.results['Summary'] = summary_df
+                if 'Summary' not in [self.results_combo.itemText(i) for i in range(self.results_combo.count())]:
+                    self.results_combo.insertItem(0, 'Summary')
+                self.results_combo.setCurrentText('Summary')
+                self.display_results('Summary')
+        elif not getattr(self, '_screening_all', False) and success and not df.empty:
+            # For single symbol, show results immediately
+            self.results_combo.setCurrentText(symbol)
+            self.display_results(symbol)
+
     def display_results(self, symbol):
         if not symbol or symbol not in self.results:
             return
-            
         df = self.results[symbol]
         if df.empty:
             return
-            
         try:
-            # Update label
-            self.results_label.setText(f"{symbol} Screening Results:")
-            
-            # Set up table
+            label = 'Screening Results:' if symbol == 'Summary' else f"{symbol} Screening Results:"
+            self.results_label.setText(label)
             self.results_table.clear()
             self.results_table.setRowCount(len(df))
             self.results_table.setColumnCount(len(df.columns))
-            
-            # Set column headers
             column_headers = {
                 'symbol': 'Symbol',
+                'current_price': 'Current Price',
                 'strike': 'Strike Price',
                 'lastPrice': 'Option Price', 
                 'volume': 'Volume',
@@ -382,11 +395,8 @@ class OptionsScreenerUI(QMainWindow):
                 'expiry': 'Expiration Date',
                 'calendar_days': 'DTE'
             }
-            
             headers = [column_headers.get(col, col) for col in df.columns]
             self.results_table.setHorizontalHeaderLabels(headers)
-            
-            # Fill data
             for i in range(len(df)):
                 for j in range(len(df.columns)):
                     value = df.iloc[i, j]
@@ -397,26 +407,19 @@ class OptionsScreenerUI(QMainWindow):
                     else:
                         item = QTableWidgetItem(str(value))
                         item.setTextAlignment(Qt.AlignCenter)
-                        
-                    # Add color for annualized return
                     if df.columns[j] == 'annualized_return':
                         if value >= 50:
-                            item.setBackground(QColor(76, 175, 80))  # Darker green for better contrast
-                            item.setForeground(QColor(255, 255, 255))  # White text
+                            item.setBackground(QColor(76, 175, 80))
+                            item.setForeground(QColor(255, 255, 255))
                         elif value >= 30:
-                            item.setBackground(QColor(255, 193, 7))  # Darker yellow for better contrast
-                            item.setForeground(QColor(0, 0, 0))  # Black text
+                            item.setBackground(QColor(255, 193, 7))
+                            item.setForeground(QColor(0, 0, 0))
                         else:
-                            item.setBackground(QColor(255, 255, 255))  # White background
-                            item.setForeground(QColor(0, 0, 0))  # Black text
-                            
+                            item.setBackground(QColor(255, 255, 255))
+                            item.setForeground(QColor(0, 0, 0))
                     self.results_table.setItem(i, j, item)
-                    
-            # Adjust column widths
             self.results_table.resizeColumnsToContents()
-            
-            # Update status bar
-            self.status_bar.showMessage(f"Displaying {len(df)} options results for {symbol}")
+            self.status_bar.showMessage(f"Displaying {len(df)} options results for {label}")
         except Exception as e:
             self.status_bar.showMessage(f"Error displaying results: {str(e)}")
             print(f"Error displaying results: {str(e)}")
