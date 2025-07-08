@@ -9,18 +9,18 @@ def load_config():
     import os
     import sys
     
-    # 确定应用程序的基本路径
+    # Determine the basic path of the application
     if getattr(sys, 'frozen', False):
-        # 如果是打包后的可执行文件
+        # If it's a packaged executable file
         application_path = os.path.dirname(sys.executable)
     else:
-        # 如果是开发环境
+        # If it's a development environment
         application_path = os.path.dirname(os.path.abspath(__file__))
     
-    # 使用应用程序路径加载配置文件
+    # Use application path to load configuration file
     config_path = os.path.join(application_path, 'config.json')
     
-    # 如果配置文件不存在，创建一个默认配置
+    # If configuration file doesn't exist, create a default configuration
     if not os.path.exists(config_path):
         default_config = {
             "data": {
@@ -51,13 +51,13 @@ def load_config():
             print(f"Error creating default config: {str(e)}")
             return default_config
     
-    # 加载配置文件
+    # Load configuration file
     try:
         with open(config_path, 'r') as f:
             return json.load(f)
     except Exception as e:
         print(f"Error loading config file: {str(e)}")
-        # 如果无法加载配置文件，返回默认配置
+        # If unable to load configuration file, return default configuration
         return {
             "data": {"symbols": ["AAPL", "MSFT", "GOOGL", "SPY", "QQQ", "TSLA", "APP", "IBIT", "PLTR"
                             ,"AVGO", "MSTR", "COIN", "SVXY", "NVDA", "AMD", "INTC", "META"]
@@ -117,56 +117,24 @@ def get_options_chain(symbol, config):
     return all_options
 
 def calculate_metrics(options_chain, current_price):
-    # 计算期权是否价外（行权价低于现价）
+    # Calculate if option is out of the money (strike price below current price)
     options_chain['out_of_the_money'] = options_chain['strike'] < current_price
     
-    # 计算剩余工作日数（假设每周5个工作日）
-    # 添加日期调试信息
-    # print(f"\n当前日期: {datetime.now().date()}")
-    # print(f"示例到期日期: {(datetime.now() + timedelta(days=int(options_chain['dte'].iloc[0]))).date()}")
-    
-    # 获取当前日期
+    # Get current date
     today = datetime.now().date()
-
-    options_chain['remaining_business_days'] = options_chain['expiry'].apply(
-        lambda expiry: np.busday_count(
-            today,
-            pd.to_datetime(expiry).date(),
-            weekmask='1111100'
-        ) + 1
-    )
     
-    # print("\n剩余工作日计算结果:")
-    # print(options_chain[['dte', 'remaining_business_days']].head())
-    
-    # 计算年化收益率（基于期权费收入）
-    BUSINESS_DAYS_PER_YEAR = 252  # 一年约252个工作日
-    # print("\n年化收益率计算参数验证:")
-    # print(f"年工作日数: {BUSINESS_DAYS_PER_YEAR}")
-    # print("示例计算参数:")
-    # sample = options_chain[['strike', 'lastPrice', 'remaining_business_days']].head()
-    # print(sample)
-    
-    # 处理剩余工作日为零的情况
-    options_chain['remaining_business_days'] = options_chain['remaining_business_days'].replace(0, 1)
-    
-    # 计算到期日的日历天数差异
+    # Calculate days to expiration (DTE)
     options_chain['calendar_days'] = options_chain['expiry'].apply(
-        lambda x: max((datetime.strptime(x, '%Y-%m-%d').date() - today).days + 1 , 1)
+        lambda x: max((datetime.strptime(x, '%Y-%m-%d').date() - today).days + 1, 1)
     )
     
-    # 使用日历天数计算年化收益率
+    # Calculate annualized return based on option premium
+    BUSINESS_DAYS_PER_YEAR = 252  # Approximately 252 business days per year
+    
+    # Use calendar days for annualized return calculation
     options_chain['annualized_return'] = (
-        options_chain['lastPrice'] / options_chain['strike'] * (BUSINESS_DAYS_PER_YEAR / options_chain['remaining_business_days']) * 100
+        options_chain['lastPrice'] / options_chain['strike'] * (BUSINESS_DAYS_PER_YEAR / options_chain['calendar_days']) * 100
     )
-    
-    # print("\n年化收益率计算结果:")
-    # print(options_chain[['annualized_return', 'remaining_business_days']].head())
-    
-    # print("\nSample data after calculation:")
-    # print(options_chain[['strike', 'lastPrice', 'dte', 'remaining_business_days', 'annualized_return']].head())
-    # print("\nValue counts for filtering conditions:")
-    # print(f"NaN values in annualized_return: {options_chain['annualized_return'].isna().sum()}")
     
     return options_chain
 
@@ -181,7 +149,7 @@ def screen_options(options_df, config):
     if 'openInterest' in options_df.columns and 'open_interest' not in options_df.columns:
         options_df['open_interest'] = options_df['openInterest']
     
-    # 逐步应用筛选条件并打印结果
+    # Gradually apply filtering conditions and print results
     conditions = {
         'volume': options_df['volume'] >= strategy['min_volume'],
         'open_interest': options_df['open_interest'] >= strategy['min_open_interest'],
@@ -218,7 +186,7 @@ def screen_options(options_df, config):
 def format_output(filtered_df):
     display_columns = [
         'symbol', 'strike', 'lastPrice', 'volume', 'open_interest',
-        'impliedVolatility', 'delta', 'annualized_return', 'expiry', 'remaining_business_days', 'calendar_days'
+        'impliedVolatility', 'delta', 'annualized_return', 'expiry', 'calendar_days'
     ]
     
     formatted = filtered_df[display_columns].copy()

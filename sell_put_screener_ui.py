@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 
-# 导入现有的options_screener模块中的函数
+# Import functions from existing options_screener module
 from sell_put_screener import (
     load_config, get_options_chain, calculate_metrics,
     screen_options, format_output
@@ -16,7 +16,7 @@ from sell_put_screener import (
 
 
 class OptionsWorker(QThread):
-    """后台线程处理期权数据获取和筛选"""
+    """Background thread for processing options data retrieval and screening"""
     finished = pyqtSignal(pd.DataFrame, str, bool)
     progress = pyqtSignal(str)
     
@@ -32,47 +32,47 @@ class OptionsWorker(QThread):
     def run(self):
         try:
             import yfinance as yf
-            self.progress.emit(f"正在处理 {self.symbol}...")
+            self.progress.emit(f"Processing {self.symbol}...")
             
             if not self._is_running:
                 return
                 
-            # 获取股票价格
+            # Get stock price
             stock = yf.Ticker(self.symbol)
             current_price = stock.info['regularMarketPrice']
             
             if not self._is_running:
                 return
                 
-            # 获取期权链
+            # Get options chain
             options = get_options_chain(self.symbol, self.config)
             
             if not self._is_running:
                 return
                 
             if options.empty:
-                self.finished.emit(pd.DataFrame(), f"未找到 {self.symbol} 的期权数据", False)
+                self.finished.emit(pd.DataFrame(), f"No options data found for {self.symbol}", False)
                 return
                 
-            # 计算指标
+            # Calculate metrics
             options = calculate_metrics(options, current_price)
             
             if not self._is_running:
                 return
                 
-            # 筛选期权
+            # Screen options
             filtered = screen_options(options, self.config)
             
-            # 格式化输出
+            # Format output
             formatted = format_output(filtered)
             if not formatted.empty:
-                self.finished.emit(formatted, f"{self.symbol} 处理完成，找到{len(formatted)}个符合条件的期权", True)
+                self.finished.emit(formatted, f"{self.symbol} processing complete, found {len(formatted)} qualifying options", True)
             else:
-                self.finished.emit(pd.DataFrame(), f"没有找到符合条件的 {self.symbol} 期权", False)
+                self.finished.emit(pd.DataFrame(), f"No qualifying options found for {self.symbol}", False)
                 
         except Exception as e:
             if self._is_running:
-                self.finished.emit(pd.DataFrame(), f"处理 {self.symbol} 时出错: {str(e)}", False)
+                self.finished.emit(pd.DataFrame(), f"Error processing {self.symbol}: {str(e)}", False)
         finally:
             self._is_running = False
 
@@ -87,23 +87,23 @@ class OptionsScreenerUI(QMainWindow):
         self.init_ui()
         
     def closeEvent(self, event):
-        # 停止所有运行中的线程
+        # Stop all running threads
         for worker in self.workers:
             worker.stop()
             worker.wait()
         event.accept()
         
     def screen_symbols(self, symbols):
-        # 清空结果下拉框
+        # Clear results dropdown
         self.results_combo.clear()
         
-        # 停止所有运行中的线程
+        # Stop all running threads
         for worker in self.workers:
             worker.stop()
             worker.wait()
         self.workers.clear()
         
-        # 逐个处理股票
+        # Process stocks one by one
         for symbol in symbols:
             worker = OptionsWorker(symbol, self.config)
             worker.finished.connect(self.process_results)
@@ -112,105 +112,105 @@ class OptionsScreenerUI(QMainWindow):
             worker.start()
     
     def init_ui(self):
-        self.setWindowTitle("期权筛选器")
+        self.setWindowTitle("Options Screener")
         self.setGeometry(100, 100, 1200, 800)
         
-        # 创建中央部件
+        # Create central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         
-        # 创建上下分割区域
+        # Create top-bottom splitter
         splitter = QSplitter(Qt.Vertical)
         main_layout.addWidget(splitter)
         
-        # 上部分 - 控制面板
+        # Top section - Control panel
         control_panel = QWidget()
         control_layout = QVBoxLayout(control_panel)
         splitter.addWidget(control_panel)
         
-        # 创建标签页
+        # Create tabs
         tab_widget = QTabWidget()
         control_layout.addWidget(tab_widget)
         
-        # 标的选择标签页
+        # Stock selection tab
         symbols_tab = QWidget()
         symbols_layout = QVBoxLayout(symbols_tab)
-        tab_widget.addTab(symbols_tab, "股票标的")
+        tab_widget.addTab(symbols_tab, "Stock Symbols")
         
-        # 股票标的选择区域
-        symbols_group = QGroupBox("股票标的选择")
+        # Stock symbol selection area
+        symbols_group = QGroupBox("Stock Symbol Selection")
         symbols_form = QFormLayout(symbols_group)
         symbols_layout.addWidget(symbols_group)
         
-        # 现有股票下拉框
+        # Existing stock dropdown
         self.symbols_combo = QComboBox()
         self.symbols_combo.addItems(self.config['data']['symbols'])
         self.symbols_combo.currentTextChanged.connect(self.on_symbol_selected)
-        symbols_form.addRow("选择股票:", self.symbols_combo)
+        symbols_form.addRow("Select Stock:", self.symbols_combo)
         
-        # 添加新股票
+        # Add new stock
         add_symbol_layout = QHBoxLayout()
         self.new_symbol_input = QLineEdit()
-        self.new_symbol_input.setPlaceholderText("输入股票代码 (例如: AAPL)")
-        add_symbol_button = QPushButton("添加")
+        self.new_symbol_input.setPlaceholderText("Enter stock symbol (e.g., AAPL)")
+        add_symbol_button = QPushButton("Add")
         add_symbol_button.clicked.connect(self.add_symbol)
         add_symbol_layout.addWidget(self.new_symbol_input)
         add_symbol_layout.addWidget(add_symbol_button)
-        symbols_form.addRow("添加新股票:", add_symbol_layout)
+        symbols_form.addRow("Add New Stock:", add_symbol_layout)
         
-        # 筛选按钮
-        screen_button = QPushButton("筛选所选股票")
+        # Screen button
+        screen_button = QPushButton("Screen Selected Stock")
         screen_button.clicked.connect(self.screen_selected_symbol)
         screen_button.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
         symbols_layout.addWidget(screen_button)
         
-        # 筛选所有按钮
-        screen_all_button = QPushButton("筛选所有股票")
+        # Screen all button
+        screen_all_button = QPushButton("Screen All Stocks")
         screen_all_button.clicked.connect(self.screen_all_symbols)
         screen_all_button.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
         symbols_layout.addWidget(screen_all_button)
         
-        # 筛选条件标签页
+        # Screening criteria tab
         criteria_tab = QWidget()
         criteria_layout = QVBoxLayout(criteria_tab)
-        tab_widget.addTab(criteria_tab, "筛选条件")
+        tab_widget.addTab(criteria_tab, "Screening Criteria")
         
-        # 期权策略设置
-        strategy_group = QGroupBox("期权策略设置")
+        # Options strategy settings
+        strategy_group = QGroupBox("Options Strategy Settings")
         strategy_form = QFormLayout(strategy_group)
         criteria_layout.addWidget(strategy_group)
         
-        # 最大到期天数
+        # Maximum days to expiration
         self.max_dte_spin = QSpinBox()
         self.max_dte_spin.setRange(1, 365)
         self.max_dte_spin.setValue(self.config['options_strategy']['max_dte'])
-        strategy_form.addRow("最大到期天数:", self.max_dte_spin)
+        strategy_form.addRow("Max Days to Expiration:", self.max_dte_spin)
         
-        # 最小成交量
+        # Minimum volume
         self.min_volume_spin = QSpinBox()
         self.min_volume_spin.setRange(0, 10000)
         self.min_volume_spin.setValue(self.config['options_strategy']['min_volume'])
-        strategy_form.addRow("最小成交量:", self.min_volume_spin)
+        strategy_form.addRow("Minimum Volume:", self.min_volume_spin)
         
-        # 最小未平仓量
+        # Minimum open interest
         self.min_oi_spin = QSpinBox()
         self.min_oi_spin.setRange(0, 10000)
         self.min_oi_spin.setValue(self.config['options_strategy']['min_open_interest'])
-        strategy_form.addRow("最小未平仓量:", self.min_oi_spin)
+        strategy_form.addRow("Minimum Open Interest:", self.min_oi_spin)
         
-        # 筛选条件设置
-        criteria_group = QGroupBox("筛选条件设置")
+        # Screening criteria settings
+        criteria_group = QGroupBox("Screening Criteria Settings")
         criteria_form = QFormLayout(criteria_group)
         criteria_layout.addWidget(criteria_group)
         
-        # 最小年化回报率
+        # Minimum annualized return
         self.min_return_spin = QDoubleSpinBox()
         self.min_return_spin.setRange(0, 100)
         self.min_return_spin.setValue(self.config['screening_criteria']['min_annualized_return'])
-        criteria_form.addRow("最小年化回报率(%):", self.min_return_spin)
+        criteria_form.addRow("Min Annualized Return (%):", self.min_return_spin)
         
-        # Delta范围
+        # Delta range
         delta_layout = QHBoxLayout()
         self.min_delta_spin = QDoubleSpinBox()
         self.min_delta_spin.setRange(-1, 0)
@@ -223,25 +223,25 @@ class OptionsScreenerUI(QMainWindow):
         self.max_delta_spin.setValue(self.config['screening_criteria']['max_delta'])
         
         delta_layout.addWidget(self.min_delta_spin)
-        delta_layout.addWidget(QLabel("至"))
+        delta_layout.addWidget(QLabel("to"))
         delta_layout.addWidget(self.max_delta_spin)
-        criteria_form.addRow("Delta范围:", delta_layout)
+        criteria_form.addRow("Delta Range:", delta_layout)
         
-        # 保存设置按钮
-        save_settings_button = QPushButton("保存设置")
+        # Save settings button
+        save_settings_button = QPushButton("Save Settings")
         save_settings_button.clicked.connect(self.save_settings)
         criteria_layout.addWidget(save_settings_button)
         
-        # 下部分 - 结果显示
+        # Bottom section - Results display
         results_panel = QWidget()
         results_layout = QVBoxLayout(results_panel)
         splitter.addWidget(results_panel)
         
-        # 结果选择区域
+        # Results selection area
         results_header = QHBoxLayout()
         results_layout.addLayout(results_header)
         
-        self.results_label = QLabel("筛选结果:")
+        self.results_label = QLabel("Screening Results:")
         self.results_label.setFont(QFont("Arial", 12, QFont.Bold))
         results_header.addWidget(self.results_label)
         
@@ -249,18 +249,18 @@ class OptionsScreenerUI(QMainWindow):
         self.results_combo.currentTextChanged.connect(self.display_results)
         results_header.addWidget(self.results_combo)
         
-        # 结果表格
+        # Results table
         self.results_table = QTableWidget()
-        self.results_table.setAlternatingRowColors(True)
+        self.results_table.setAlternatingRowColors(False)  # Disable to avoid conflicts with cell colors
         self.results_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         results_layout.addWidget(self.results_table)
         
-        # 状态栏
+        # Status bar
         self.status_bar = self.statusBar()
-        self.status_bar.showMessage("就绪")
+        self.status_bar.showMessage("Ready")
         
-        # 设置分割器比例
+        # Set splitter proportions
         splitter.setSizes([300, 500])
         
     def on_symbol_selected(self, symbol):
@@ -274,21 +274,21 @@ class OptionsScreenerUI(QMainWindow):
             return
             
         if new_symbol in self.config['data']['symbols']:
-            QMessageBox.information(self, "提示", f"{new_symbol} 已在列表中")
+            QMessageBox.information(self, "Info", f"{new_symbol} is already in the list")
             return
             
-        # 添加到配置和下拉框
+        # Add to config and dropdown
         self.config['data']['symbols'].append(new_symbol)
         self.symbols_combo.addItem(new_symbol)
         self.symbols_combo.setCurrentText(new_symbol)
         self.new_symbol_input.clear()
         
-        # 保存到配置文件
+        # Save to config file
         self.save_config()
-        self.status_bar.showMessage(f"已添加 {new_symbol} 到股票列表")
+        self.status_bar.showMessage(f"Added {new_symbol} to stock list")
     
     def save_settings(self):
-        # 更新配置
+        # Update config
         self.config['options_strategy']['max_dte'] = self.max_dte_spin.value()
         self.config['options_strategy']['min_volume'] = self.min_volume_spin.value()
         self.config['options_strategy']['min_open_interest'] = self.min_oi_spin.value()
@@ -297,9 +297,9 @@ class OptionsScreenerUI(QMainWindow):
         self.config['screening_criteria']['min_delta'] = self.min_delta_spin.value()
         self.config['screening_criteria']['max_delta'] = self.max_delta_spin.value()
         
-        # 保存到配置文件
+        # Save to config file
         self.save_config()
-        self.status_bar.showMessage("设置已保存")
+        self.status_bar.showMessage("Settings saved")
     
     def save_config(self):
         try:
@@ -308,31 +308,31 @@ class OptionsScreenerUI(QMainWindow):
             with open(config_path, 'w') as f:
                 json.dump(self.config, f, indent=4)
         except Exception as e:
-            QMessageBox.warning(self, "错误", f"保存配置失败: {str(e)}")
-            self.status_bar.showMessage(f"保存配置失败: {str(e)}")
+            QMessageBox.warning(self, "Error", f"Failed to save config: {str(e)}")
+            self.status_bar.showMessage(f"Failed to save config: {str(e)}")
     
     def screen_selected_symbol(self):
         symbol = self.symbols_combo.currentText()
         if not symbol:
             return
             
-        self.status_bar.showMessage(f"正在处理 {symbol}...")
+        self.status_bar.showMessage(f"Processing {symbol}...")
         self.screen_symbols([symbol])
     
     def screen_all_symbols(self):
         symbols = self.config['data']['symbols']
         if not symbols:
-            QMessageBox.information(self, "提示", "没有可用的股票标的")
+            QMessageBox.information(self, "Info", "No stock symbols available")
             return
             
-        self.status_bar.showMessage("正在处理所有股票...")
+        self.status_bar.showMessage("Processing all stocks...")
         self.screen_symbols(symbols)
     
     def process_results(self, df, message, success):
         self.status_bar.showMessage(message)
         
         if success:
-            # 从消息中提取股票代码
+            # Extract stock symbol from message
             symbol = self.current_symbol
             if not df.empty:
                 symbol = df['symbol'].iloc[0]
@@ -342,13 +342,13 @@ class OptionsScreenerUI(QMainWindow):
                 if symbol not in [self.results_combo.itemText(i) for i in range(self.results_combo.count())]:
                     self.results_combo.addItem(symbol)
                     
-                # 如果是当前选中的股票，立即显示结果
+                # If it's the currently selected stock, display results immediately
                 if symbol == self.current_symbol or self.results_combo.count() == 1:
                     self.results_combo.setCurrentText(symbol)
                     self.display_results(symbol)
             else:
-                # 仅在状态栏显示消息，不弹出对话框
-                self.status_bar.showMessage(f"没有找到符合条件的{symbol}期权")
+                # Only show message in status bar, don't pop up dialog
+                self.status_bar.showMessage(f"No qualifying options found for {symbol}")
         else:
             self.status_bar.showMessage(message)
     
@@ -361,33 +361,32 @@ class OptionsScreenerUI(QMainWindow):
             return
             
         try:
-            # 更新标签
-            self.results_label.setText(f"{symbol} 筛选结果:")
+            # Update label
+            self.results_label.setText(f"{symbol} Screening Results:")
             
-            # 设置表格
+            # Set up table
             self.results_table.clear()
             self.results_table.setRowCount(len(df))
             self.results_table.setColumnCount(len(df.columns))
             
-            # 设置表头
+            # Set column headers
             column_headers = {
-                'symbol': '股票代码',
-                'strike': '行权价',
-                'lastPrice': '期权价格', 
-                'volume': '成交量',
-                'open_interest': '未平仓量',
-                'impliedVolatility': '隐含波动率(%)',
+                'symbol': 'Symbol',
+                'strike': 'Strike Price',
+                'lastPrice': 'Option Price', 
+                'volume': 'Volume',
+                'open_interest': 'Open Interest',
+                'impliedVolatility': 'Implied Volatility (%)',
                 'delta': 'Delta',
-                'annualized_return': '年化收益率(%)',
-                'expiry': '到期日',
-                'calendar_days': '日历天数',
-                'remaining_business_days': '剩余交易日'
+                'annualized_return': 'Annualized Return (%)',
+                'expiry': 'Expiration Date',
+                'calendar_days': 'DTE'
             }
             
             headers = [column_headers.get(col, col) for col in df.columns]
             self.results_table.setHorizontalHeaderLabels(headers)
             
-            # 填充数据
+            # Fill data
             for i in range(len(df)):
                 for j in range(len(df.columns)):
                     value = df.iloc[i, j]
@@ -399,23 +398,28 @@ class OptionsScreenerUI(QMainWindow):
                         item = QTableWidgetItem(str(value))
                         item.setTextAlignment(Qt.AlignCenter)
                         
-                    # 为年化收益率添加颜色
+                    # Add color for annualized return
                     if df.columns[j] == 'annualized_return':
                         if value >= 50:
-                            item.setBackground(QColor(144, 238, 144))  # 浅绿色
+                            item.setBackground(QColor(76, 175, 80))  # Darker green for better contrast
+                            item.setForeground(QColor(255, 255, 255))  # White text
                         elif value >= 30:
-                            item.setBackground(QColor(255, 255, 224))  # 浅黄色
+                            item.setBackground(QColor(255, 193, 7))  # Darker yellow for better contrast
+                            item.setForeground(QColor(0, 0, 0))  # Black text
+                        else:
+                            item.setBackground(QColor(255, 255, 255))  # White background
+                            item.setForeground(QColor(0, 0, 0))  # Black text
                             
                     self.results_table.setItem(i, j, item)
                     
-            # 调整列宽
+            # Adjust column widths
             self.results_table.resizeColumnsToContents()
             
-            # 更新状态栏
-            self.status_bar.showMessage(f"显示 {symbol} 的 {len(df)} 个期权结果")
+            # Update status bar
+            self.status_bar.showMessage(f"Displaying {len(df)} options results for {symbol}")
         except Exception as e:
-            self.status_bar.showMessage(f"显示结果时出错: {str(e)}")
-            print(f"显示结果时出错: {str(e)}")
+            self.status_bar.showMessage(f"Error displaying results: {str(e)}")
+            print(f"Error displaying results: {str(e)}")
 
 
 def main():
